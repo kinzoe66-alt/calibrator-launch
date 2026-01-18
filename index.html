@@ -1,75 +1,13 @@
-<!-- index.html -->
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Static App</title>
-    <meta name="description" content="Static-first JavaScript app scaffold." />
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
-    <header class="site-header">
-      <div class="container">
-        <h1 class="site-title">Static App</h1>
-        <p class="site-subtitle">Vanilla JS scaffold</p>
-      </div>
-    </header>
-
-    <main class="container" id="app" role="main" aria-label="Application">
-      <section class="card" aria-label="Counter">
-        <div class="row">
-          <h2 class="card-title">Counter</h2>
-          <div class="badge" id="status" aria-live="polite"></div>
-        </div>
-
-        <div class="counter">
-          <button class="btn" type="button" id="decrement" aria-label="Decrement">
-            −
-          </button>
-
-          <output class="count" id="count" aria-live="polite">0</output>
-
-          <button class="btn" type="button" id="increment" aria-label="Increment">
-            +
-          </button>
-        </div>
-
-        <div class="actions">
-          <button class="btn btn-secondary" type="button" id="reset">Reset</button>
-        </div>
-      </section>
-
-      <section class="card" aria-label="Notes">
-        <h2 class="card-title">Notes</h2>
-
-        <form id="noteForm" class="form" autocomplete="off">
-          <label class="label" for="noteInput">Add a note</label>
-          <div class="form-row">
-            <input
-              class="input"
-              id="noteInput"
-              name="note"
-              type="text"
-              inputmode="text"
-              maxlength="140"
-              placeholder="Type and press Add"
-              required
-            />
-            <button class="btn" type="submit" id="addNote">Add</button>
-          </div>
-        </form>
-
-        <ul class="list" id="noteList" aria-label="Notes list"></ul>
-      </section>
-    </main>
-
-    <footer class="site-footer">
-      <div class="container">
-        <small>Static-first • No backend</small>
-      </div>
-    </footer>
-
-    <script type="module" src="./app.js"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Calibrator</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script src="app.js"></script>
+</body>
 </html>

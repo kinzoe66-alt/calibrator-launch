@@ -1,267 +1,260 @@
-// app.js
-class CounterModel {
-  #value;
+/* ============================================================
+   CALIBRATOR — SINGLE STATE, DETERMINISTIC SYSTEM
+   ============================================================
 
-  constructor(initialValue = 0) {
-    if (!Number.isInteger(initialValue)) throw new TypeError("initialValue must be an integer");
-    this.#value = initialValue;
-  }
+   SEMANTICS:
+   - Manual Signals: quantitative factors chosen by the user
+     (weights, intensities, scores).
+   - Raw Input: qualitative context describing the situation.
+   - Derived Signals: deterministic features extracted from Raw Input.
+   - Metrics: numeric summary of the calibration run.
+   - Interpretation: actionable system understanding.
 
-  get value() {
-    return this.#value;
-  }
+   ============================================================ */
 
-  increment() {
-    this.#value += 1;
-    return this.#value;
-  }
+/* =========================
+   Global State
+   ========================= */
+const state = {
+  status: "idle",          // idle | running | complete | error
+  signalsDraft: [10, 20, 30],
+  rawInput: "",
+  runs: [],
+  error: null
+};
 
-  decrement() {
-    this.#value -= 1;
-    return this.#value;
-  }
+/* =========================
+   Pure Helpers
+   ========================= */
+function deriveTextSignals(text) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(Boolean);
 
-  reset() {
-    this.#value = 0;
-    return this.#value;
-  }
+  const positive = ["good", "clear", "success", "positive", "ready"];
+  const negative = ["bad", "confused", "fail", "error", "blocked"];
+
+  let sentiment = 0;
+  words.forEach(w => {
+    const lw = w.toLowerCase();
+    if (positive.includes(lw)) sentiment++;
+    if (negative.includes(lw)) sentiment--;
+  });
+
+  return [
+    text.length,           // Text Length
+    words.length,          // Word Count
+    sentences.length,      // Sentence Count
+    sentiment               // Sentiment Proxy
+  ];
 }
 
-class NotesModel {
-  #notes;
+function deriveMetrics(signals) {
+  let min = signals[0];
+  let max = signals[0];
+  let sum = 0;
 
-  constructor(initialNotes = []) {
-    if (!Array.isArray(initialNotes)) throw new TypeError("initialNotes must be an array");
-    this.#notes = initialNotes.map((n) => NotesModel.#sanitize(n)).filter((n) => n.length > 0);
-  }
+  signals.forEach(v => {
+    min = Math.min(min, v);
+    max = Math.max(max, v);
+    sum += v;
+  });
 
-  static #sanitize(input) {
-    return String(input ?? "").trim().replace(/\s+/g, " ");
-  }
-
-  list() {
-    return [...this.#notes];
-  }
-
-  add(noteText) {
-    const v = NotesModel.#sanitize(noteText);
-    if (v.length === 0) return null;
-    this.#notes.push(v);
-    return v;
-  }
-
-  removeAt(index) {
-    if (!Number.isInteger(index) || index < 0 || index >= this.#notes.length) return false;
-    this.#notes.splice(index, 1);
-    return true;
-  }
-
-  clear() {
-    this.#notes = [];
-  }
+  return {
+    min,
+    max,
+    mean: Number((sum / signals.length).toFixed(2)),
+    count: signals.length
+  };
 }
 
-class Store {
-  constructor(key, fallbackValue) {
-    if (typeof key !== "string" || key.trim().length === 0) throw new TypeError("key must be a non-empty string");
-    this.key = key;
-    this.fallbackValue = fallbackValue;
+/* =========================
+   Interpretation Logic
+   ========================= */
+function interpret(metrics, textSignals) {
+  if (!metrics) {
+    return {
+      pressure: "Low",
+      load: "Low",
+      clarity: "Low",
+      readiness: "Not Ready"
+    };
   }
 
-  load() {
-    try {
-      const raw = localStorage.getItem(this.key);
-      if (raw === null) return structuredClone(this.fallbackValue);
-      return JSON.parse(raw);
-    } catch {
-      return structuredClone(this.fallbackValue);
-    }
-  }
+  const textLength = textSignals[0] || 0;
+  const sentenceCount = textSignals[2] || 1;
 
-  save(value) {
-    localStorage.setItem(this.key, JSON.stringify(value));
-  }
+  const pressure =
+    metrics.mean + textLength > 200 ? "High" :
+    metrics.mean + textLength > 80 ? "Medium" : "Low";
+
+  const load =
+    metrics.count + sentenceCount > 15 ? "High" :
+    metrics.count + sentenceCount > 8 ? "Medium" : "Low";
+
+  const clarity =
+    sentenceCount > 6 ? "Low" :
+    sentenceCount > 3 ? "Medium" : "High";
+
+  const readiness =
+    pressure !== "High" && clarity === "High"
+      ? "Ready"
+      : "Not Ready";
+
+  return { pressure, load, clarity, readiness };
 }
 
-class AppUI {
-  constructor(root) {
-    if (!(root instanceof HTMLElement)) throw new TypeError("root must be an HTMLElement");
-    this.root = root;
-
-    this.countEl = this.#req("#count");
-    this.statusEl = this.#req("#status");
-    this.incBtn = this.#req("#increment");
-    this.decBtn = this.#req("#decrement");
-    this.resetBtn = this.#req("#reset");
-
-    this.noteForm = this.#req("#noteForm");
-    this.noteInput = this.#req("#noteInput");
-    this.noteList = this.#req("#noteList");
-  }
-
-  #req(selector) {
-    const el = this.root.querySelector(selector) ?? document.querySelector(selector);
-    if (!el) throw new Error(`Missing required element: ${selector}`);
-    return el;
-  }
-
-  bindCounter({ onIncrement, onDecrement, onReset }) {
-    this.incBtn.addEventListener("click", () => onIncrement());
-    this.decBtn.addEventListener("click", () => onDecrement());
-    this.resetBtn.addEventListener("click", () => onReset());
-  }
-
-  bindNotes({ onAdd, onRemove }) {
-    this.noteForm.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const text = this.noteInput.value;
-      const added = onAdd(text);
-      if (added) this.noteInput.value = "";
-      this.noteInput.focus();
-    });
-
-    this.noteList.addEventListener("click", (e) => {
-      const target = e.target;
-      if (!(target instanceof Element)) return;
-      const btn = target.closest("[data-action='remove']");
-      if (!btn) return;
-
-      const idxStr = btn.getAttribute("data-index");
-      const idx = idxStr === null ? NaN : Number(idxStr);
-      if (!Number.isInteger(idx)) return;
-
-      onRemove(idx);
-    });
-  }
-
-  renderCounter(value) {
-    this.countEl.textContent = String(value);
-  }
-
-  renderStatus(text) {
-    this.statusEl.textContent = text;
-  }
-
-  renderNotes(notes) {
-    this.noteList.replaceChildren(
-      ...notes.map((text, index) => {
-        const li = document.createElement("li");
-        li.className = "list-item";
-
-        const span = document.createElement("span");
-        span.className = "list-text";
-        span.textContent = text;
-
-        const btn = document.createElement("button");
-        btn.className = "icon-btn";
-        btn.type = "button";
-        btn.setAttribute("data-action", "remove");
-        btn.setAttribute("data-index", String(index));
-        btn.setAttribute("aria-label", `Remove note ${index + 1}`);
-        btn.textContent = "Remove";
-
-        li.append(span, btn);
-        return li;
-      })
-    );
-  }
+/* =========================
+   Actions
+   ========================= */
+function updateSignal(index, value) {
+  if (!Number.isFinite(value)) return;
+  state.signalsDraft[index] = value;
+  render();
 }
 
-class AppController {
-  constructor({ ui, counter, notes, notesStore, counterStore }) {
-    this.ui = ui;
-    this.counter = counter;
-    this.notes = notes;
-    this.notesStore = notesStore;
-    this.counterStore = counterStore;
-  }
-
-  start() {
-    this.ui.bindCounter({
-      onIncrement: () => this.#updateCounter("inc"),
-      onDecrement: () => this.#updateCounter("dec"),
-      onReset: () => this.#updateCounter("reset"),
-    });
-
-    this.ui.bindNotes({
-      onAdd: (text) => this.#addNote(text),
-      onRemove: (index) => this.#removeNote(index),
-    });
-
-    this.ui.renderCounter(this.counter.value);
-    this.ui.renderNotes(this.notes.list());
-    this.ui.renderStatus("Ready");
-  }
-
-  #updateCounter(kind) {
-    let v;
-    if (kind === "inc") v = this.counter.increment();
-    else if (kind === "dec") v = this.counter.decrement();
-    else v = this.counter.reset();
-
-    this.counterStore.save({ value: v });
-
-    this.ui.renderCounter(v);
-    this.ui.renderStatus(`Counter: ${v}`);
-  }
-
-  #addNote(text) {
-    const added = this.notes.add(text);
-    if (!added) {
-      this.ui.renderStatus("Note was empty");
-      return null;
-    }
-
-    const list = this.notes.list();
-    this.notesStore.save({ notes: list });
-
-    this.ui.renderNotes(list);
-    this.ui.renderStatus("Note added");
-    return added;
-  }
-
-  #removeNote(index) {
-    const ok = this.notes.removeAt(index);
-    if (!ok) return;
-
-    const list = this.notes.list();
-    this.notesStore.save({ notes: list });
-
-    this.ui.renderNotes(list);
-    this.ui.renderStatus("Note removed");
-  }
+function updateRawInput(value) {
+  state.rawInput = value;
+  render();
 }
 
-function bootstrap() {
+function submitCalibration() {
+  if (!state.rawInput.trim()) {
+    state.error = "Raw Input is required to run calibration.";
+    render();
+    return;
+  }
+
+  state.status = "running";
+  state.error = null;
+  render();
+
+  const derived = deriveTextSignals(state.rawInput);
+  const signals = state.signalsDraft.concat(derived);
+  const metrics = deriveMetrics(signals);
+
+  state.runs.unshift({
+    id: state.runs.length + 1,
+    timestamp: Date.now(),
+    signals,
+    metrics,
+    derived
+  });
+  state.runs = state.runs.slice(0, 5);
+
+  state.rawInput = "";
+  state.status = "complete";
+  render();
+}
+
+function resetAll() {
+  state.status = "idle";
+  state.signalsDraft = [10, 20, 30];
+  state.rawInput = "";
+  state.runs = [];
+  state.error = null;
+  render();
+}
+
+/* =========================
+   Render (Single Path)
+   ========================= */
+function render() {
   const root = document.getElementById("app");
-  if (!root) throw new Error("Missing #app root element");
+  const latest = state.runs[0];
+  const interp = latest
+    ? interpret(latest.metrics, latest.derived)
+    : interpret(null, []);
 
-  const counterStore = new Store("static-app.counter.v1", { value: 0 });
-  const notesStore = new Store("static-app.notes.v1", { notes: [] });
+  root.innerHTML = `
+    <h1>Calibrator</h1>
+    <p class="subhead">
+      Quantitative signals + qualitative context → calibrated system state
+    </p>
 
-  const counterState = counterStore.load();
-  const notesState = notesStore.load();
+    <div class="panel status-${state.status}">
+      <div class="status ${state.status}">
+        Status: ${state.status.toUpperCase()}
+      </div>
 
-  const initialCounterValue =
-    counterState && typeof counterState === "object" && Number.isInteger(counterState.value)
-      ? counterState.value
-      : 0;
+      <div class="inputs">
+        ${state.signalsDraft.map((v, i) => `
+          <div class="signal-row">
+            <label>Signal ${i + 1} (Quantitative Factor)</label>
+            <input type="number" value="${v}" data-i="${i}" />
+          </div>
+        `).join("")}
+      </div>
 
-  const initialNotes =
-    notesState && typeof notesState === "object" && Array.isArray(notesState.notes)
-      ? notesState.notes
-      : [];
+      <div class="inputs" style="margin-top:12px;">
+        <label>Raw Input (Qualitative Context)</label>
+        <textarea>${state.rawInput}</textarea>
+      </div>
 
-  const ui = new AppUI(root);
-  const counter = new CounterModel(initialCounterValue);
-  const notes = new NotesModel(initialNotes);
+      <div class="row">
+        <button class="primary" id="submit">Submit Calibration</button>
+        <button class="secondary" id="reset">Reset</button>
+      </div>
 
-  const controller = new AppController({ ui, counter, notes, notesStore, counterStore });
-  controller.start();
+      ${state.error ? `<div class="status error">${state.error}</div>` : ""}
+    </div>
+
+    <div class="panel interpretation">
+      <strong>Interpretation</strong>
+      <div class="kv">
+        <div class="k">Pressure Level</div>
+        <div class="v ${interp.pressure.toLowerCase()}">${interp.pressure}</div>
+
+        <div class="k">Cognitive Load</div>
+        <div class="v ${interp.load.toLowerCase()}">${interp.load}</div>
+
+        <div class="k">Clarity</div>
+        <div class="v ${interp.clarity.toLowerCase()}">${interp.clarity}</div>
+
+        <div class="k">Action Readiness</div>
+        <div class="v ${interp.readiness === "Ready" ? "ready" : "not-ready"}">
+          ${interp.readiness}
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <strong>Latest Metrics</strong>
+      <div class="kv">
+        <div class="k">Min</div><div>${latest ? latest.metrics.min : "—"}</div>
+        <div class="k">Max</div><div>${latest ? latest.metrics.max : "—"}</div>
+        <div class="k">Mean</div><div>${latest ? latest.metrics.mean : "—"}</div>
+        <div class="k">Count</div><div>${latest ? latest.metrics.count : "—"}</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <strong>Recent Runs</strong>
+      <div class="list">
+        ${state.runs.map(r => `
+          <div class="run">
+            <div class="run-title">Run #${r.id}</div>
+            <div>${new Date(r.timestamp).toLocaleString()}</div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+
+  root.querySelectorAll("input[type=number]").forEach(el =>
+    el.addEventListener("input", e =>
+      updateSignal(Number(e.target.dataset.i), Number(e.target.value))
+    )
+  );
+
+  root.querySelector("textarea").addEventListener("input", e =>
+    updateRawInput(e.target.value)
+  );
+
+  document.getElementById("submit").onclick = submitCalibration;
+  document.getElementById("reset").onclick = resetAll;
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", bootstrap, { once: true });
-} else {
-  bootstrap();
-}
+/* =========================
+   Boot
+   ========================= */
+render();
